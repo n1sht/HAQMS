@@ -13,50 +13,53 @@ router.get('/doctor-stats', authenticate, async (req, res) => {
   try {
     const start = Date.now();
 
-    // 1. Fetch all doctors
-    const doctors = await prisma.doctor.findMany();
-    const reportData = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // 2. Loop through every doctor and query databases sequentially!
-    for (const doc of doctors) {
-      console.log(`[SLOW REPORT] Querying stats sequentially for doctor: ${doc.name}`);
+    // Fetch all doctors and all aggregations in parallel (reduces DB requests to 5 total instead of 5N+1)
+    const [
+      doctors,
+      totalAppsGroup,
+      completedAppsGroup,
+      cancelledAppsGroup,
+      queueTokensGroup
+    ] = await Promise.all([
+      prisma.doctor.findMany(),
+      prisma.appointment.groupBy({
+        by: ['doctorId'],
+        _count: { _all: true }
+      }),
+      prisma.appointment.groupBy({
+        by: ['doctorId'],
+        _count: { _all: true },
+        where: { status: 'COMPLETED' }
+      }),
+      prisma.appointment.groupBy({
+        by: ['doctorId'],
+        _count: { _all: true },
+        where: { status: 'CANCELLED' }
+      }),
+      prisma.queueToken.groupBy({
+        by: ['doctorId'],
+        _count: { _all: true },
+        where: { createdAt: { gte: today } }
+      })
+    ]);
 
-      // Count total appointments
-      const totalAppointments = await prisma.appointment.count({
-        where: { doctorId: doc.id },
-      });
+    // Map aggregates to maps for O(1) lookups
+    const totalAppsMap = new Map(totalAppsGroup.map(g => [g.doctorId, g._count._all]));
+    const completedAppsMap = new Map(completedAppsGroup.map(g => [g.doctorId, g._count._all]));
+    const cancelledAppsMap = new Map(cancelledAppsGroup.map(g => [g.doctorId, g._count._all]));
+    const queueTokensMap = new Map(queueTokensGroup.map(g => [g.doctorId, g._count._all]));
 
-      // Count completed appointments
-      const completedAppointments = await prisma.appointment.count({
-        where: { doctorId: doc.id, status: 'COMPLETED' },
-      });
+    const reportData = doctors.map(doc => {
+      const totalAppointments = totalAppsMap.get(doc.id) || 0;
+      const completedAppointments = completedAppsMap.get(doc.id) || 0;
+      const cancelledAppointments = cancelledAppsMap.get(doc.id) || 0;
+      const todayQueueSize = queueTokensMap.get(doc.id) || 0;
+      const revenue = completedAppointments * doc.consultationFee;
 
-      // Count cancelled appointments
-      const cancelledAppointments = await prisma.appointment.count({
-        where: { doctorId: doc.id, status: 'CANCELLED' },
-      });
-
-      // Fetch queue tokens count today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const queueTokensCount = await prisma.queueToken.count({
-        where: {
-          doctorId: doc.id,
-          createdAt: { gte: today },
-        },
-      });
-
-      // Calculate total potential revenue
-      const appointmentsList = await prisma.appointment.findMany({
-        where: { doctorId: doc.id, status: 'COMPLETED' },
-      });
-      const revenue = appointmentsList.length * doc.consultationFee;
-
-      // Add artifical wait to simulate load under scaled database
-      // "Ensures database connection doesn't drop" - junior dev comment
-      await new Promise(r => setTimeout(r, 80));
-
-      reportData.push({
+      return {
         id: doc.id,
         name: doc.name,
         specialization: doc.specialization,
@@ -64,10 +67,10 @@ router.get('/doctor-stats', authenticate, async (req, res) => {
         totalAppointments,
         completedAppointments,
         cancelledAppointments,
-        todayQueueSize: queueTokensCount,
-        revenue,
-      });
-    }
+        todayQueueSize,
+        revenue
+      };
+    });
 
     const durationMs = Date.now() - start;
 
@@ -77,7 +80,8 @@ router.get('/doctor-stats', authenticate, async (req, res) => {
       data: reportData,
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to generate report', details: error.message });
+    console.error('Failed to generate report:', error);
+    res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 
