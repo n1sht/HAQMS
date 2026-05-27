@@ -60,39 +60,37 @@ The database seed script populates the database with default accounts (All passw
 
 ---
 
-## 🎯 Internship Evaluation Tasks
+## 🎯 Completed Internship Evaluation Tasks
 
-As an internship candidate, your evaluation is divided into five core objectives:
+All five challenges in the evaluation checklist have been successfully audited, refactored, and verified:
 
-### 🔍 Challenge 1: Security Audit
-Identify and patch several production-level security bugs:
-- **Credential Logging**: Find where raw user passwords are logged in plain text.
-- **Leaky Token Signature**: Audit how JWTs are signed, stored, and verified.
-- **SQL Injection**: Locate the search input vulnerable to SQL injection and rewrite it using parameterized queries.
-- **Bypassed Authorization**: Find the admin action endpoint that fails to enforce actual role authorizations.
+### 🔍 Challenge 1: Security Audit (Completed ✅)
+- **Credential Logging**: Plaintext passwords removed from console logs in [auth.js](file:///d:/dev/Assignment/backend/src/routes/auth.js).
+- **Leaky Token Signature**: Expiration is strictly verified (8-hour limit) and token signature mismatches are hidden from clients in the [auth middleware](file:///d:/dev/Assignment/backend/src/middleware/auth.js).
+- **SQL Injection**: Parameterized Prisma queries secure the doctor lookup directory in [doctors.js](file:///d:/dev/Assignment/backend/src/routes/doctors.js).
+- **Bypassed Authorization**: Enforced admin-only validation check on delete routes.
+- **Error Stack Trace Leakage**: Sanitized catch blocks to prevent database schema and server trace leaks.
 
-### ⚡ Challenge 2: Backend Performance & Concurrency
-Analyze and optimize backend logic:
-- **N+1 Database Queries**: Identify the endpoint fetching core list elements but executing separate queries per row in a loop.
-- **Event-Loop Blocking**: Locate sequential async database queries where parallel triggers should be utilized.
-- **Slow aggregation endpoint**: Fix the slow nested report endpoint that locks the event loop.
-- **Check-in Token Race Condition**: Find why concurrent direct check-ins assign duplicate token numbers and patch it using transaction locks or auto-increment sequences.
+### ⚡ Challenge 2: Backend Performance & Concurrency (Completed ✅)
+- **N+1 Database Queries**: Refactored appointments listing in [appointments.js](file:///d:/dev/Assignment/backend/src/routes/appointments.js) to retrieve joined patient and doctor details in a single query using Prisma `include` joins.
+- **Event-Loop Blocking**: Parallelized independent doctor statistics calls using `Promise.all()`.
+- **Slow Reports Aggregation**: Optimized the `/doctor-stats` reports endpoint in [reports.js](file:///d:/dev/Assignment/backend/src/routes/reports.js) using SQL group-by queries, reducing database requests from $5N+1$ to 5 concurrent queries and removing the artificial 80ms delay.
+- **Check-in Concurrency Race Condition**: Implemented a Prisma transaction with a row-level write lock (`SELECT FOR UPDATE` on Doctor) inside check-in routing in [queue.js](file:///d:/dev/Assignment/backend/src/routes/queue.js), preventing duplicate token numbers.
 
-### 💾 Challenge 3: Database & Schema Optimization
-Refactor DB layers:
-- **Schema Vulnerabilities**: Locate the missing constraints that permit double-booking the same physician at the exact same millisecond slot.
-- **Missing Indices**: Add appropriate indices to speed up foreign key relationships and status filters under load.
-- **Paging Optimization**: Fix the listing route that performs in-memory pagination slicing instead of SQL pagination.
+### 💾 Challenge 3: Database & Schema Optimization (Completed ✅)
+- **Schema Vulnerability**: Added `@@unique([doctorId, appointmentDate])` to the `Appointment` model to prevent double-bookings.
+- **Missing Indexes**: Added performance indexes on `Doctor` (specialization, department), `Appointment` (doctorId+status, patientId), and `QueueToken` (doctorId+createdAt, status).
+- **Paging Optimization**: Moved patient directory paging (`take`/`skip`) to SQL level in [patients.js](file:///d:/dev/Assignment/backend/src/routes/patients.js).
+- **Idempotent Seeding**: Clear existing tables before seeding inside [seed.js](file:///d:/dev/Assignment/backend/prisma/seed.js) to make setup repeatable.
 
-### 🖥️ Challenge 4: Frontend Memory & React Optimization
-Examine frontend React components:
-- **Severe Memory Leak**: Navigate to the Live Public Queue Board (`/queue`). Mount and unmount it repeatedly. Find the leak in `src/app/queue/page.js` and patch it.
-- **Unnecessary Re-renders**: Optimize search input fields that trigger complete list re-renders on every single keystroke.
-- **NULL Value Application Crash**: Log in as a Doctor (`doctor1@haqms.com`), click on one of the patients with a blank medical history (e.g., Clark Kent or Bruce Wayne), and diagnose why the entire React app crashes on rendering.
+### 🖥️ Challenge 4: Frontend Memory & React Optimization (Completed ✅)
+- **Severe Memory Leak**: Added `clearInterval` cleanup to the Live monitor polling hook in [queue/page.js](file:///d:/dev/Assignment/frontend/src/app/queue/page.js).
+- **Keystroke Re-renders**: Implemented a debounced search input component to prevent parent page re-renders in [dashboard/page.js](file:///d:/dev/Assignment/frontend/src/app/dashboard/page.js).
+- **NULL Value App Crash**: Safeguarded null history renderings, fixed Hook ordering render warning, and restored missing next/link references.
 
-### 🏗️ Challenge 5: Incomplete Feature Delivery
-- **Resolve styled 404 error**: Clicking "View Diagnostic Reports Details (Legacy App)" on a patient profile triggers a 404 page. Your final task is to build out that missing page (`src/app/patients/[id]/history-records/page.js`) to fetch and render the patient clinical record.
+### 🏗️ Challenge 5: Incomplete Feature Delivery (Completed ✅)
+- **Legacy Records Page**: Built out the dynamically routed Next.js history records page under [history-records/page.js](file:///d:/dev/Assignment/frontend/src/app/patients/[id]/history-records/page.js) with auto-printing formatting.
 
 ---
 
-Good luck! You will be evaluated based on the cleanliness, correctness, efficiency, and safety of your refactoring.
+For a detailed breakdown of all implemented fixes, performance gains, and concurrency verification logs, please refer to the **[DOCUMENTATION.md](./DOCUMENTATION.md)** file in the root folder.
